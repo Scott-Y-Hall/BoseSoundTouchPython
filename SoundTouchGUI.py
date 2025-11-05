@@ -214,10 +214,32 @@ class SoundTouchApp:
             if device_name in self.saved_devices:
                 device_info = self.saved_devices[device_name]
                 try:
-                    self.selected_device = SoundTouchDevice(device_info['host'])
+                    logger.info(f"Connecting to device from list: {device_name}")
+                    
+                    # Clean up any previous instances
+                    if hasattr(self, 'selected_client'):
+                        del self.selected_client
+                    if hasattr(self, 'selected_device'):
+                        del self.selected_device
+                    
+                    # Initialize the device and client
+                    host = device_info['host']
+                    port = device_info.get('port', 8090)  # Default port if not specified
+                    logger.debug(f"Creating device with host: {host}, port: {port}")
+                    
+                    self.selected_device = SoundTouchDevice(host, port=port)
+                    logger.debug("Creating SoundTouchClient")
+                    self.selected_client = SoundTouchClient(self.selected_device)
+                    
+                    # Update the UI
+                    if device_name in self.device_dropdown['values']:
+                        self.device_var.set(device_name)
                     self.update_device_status()
+                    
                 except Exception as e:
-                    self.status_var.set(f"Error connecting to device: {str(e)}")
+                    error_msg = f"Error connecting to device: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    self.status_var.set(error_msg)
     
     def remove_device(self):
         """Remove the selected device from saved devices."""
