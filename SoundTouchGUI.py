@@ -32,6 +32,7 @@ class SoundTouchApp:
         self.saved_devices = {}
         self.selected_device = None
         self.selected_client = None  # Initialize client
+        self._updating_volume = False  # Flag to prevent update loops
         
         # Create UI
         self.setup_ui()
@@ -329,9 +330,10 @@ class SoundTouchApp:
                             status_parts.append(f"Power: {now_playing.PowerState}")
                         
                         # Update volume if available
-                        if hasattr(now_playing, 'Volume') and hasattr(now_playing.Volume, 'Level'):
-                            self.volume_slider.set(now_playing.Volume.Level)
-                            status_parts.append(f"Volume: {now_playing.Volume.Level}%")
+                        if not self._updating_volume:
+                            volume_info = self.selected_client.GetVolume(True)
+                            self.volume_slider.set(volume_info.Actual)
+                            status_parts.append(f"Volume: {volume_info.Actual}%")
                         
                         # Update content info if available
                         if hasattr(now_playing, 'ContentItem'):
@@ -371,13 +373,30 @@ class SoundTouchApp:
             self.log_error(f"Failed to update device status: {str(e)}", exc_info=True)
     
     def on_volume_change(self, value):
-        if self.selected_device:
+        if hasattr(self, 'selected_client') and self.selected_client and not self._updating_volume:
             try:
+                self._updating_volume = True
                 volume_level = int(float(value))
                 logger.debug(f"Setting volume to {volume_level}")
-                self.selected_device.Volume = volume_level
+                
+                # Update status immediately for better responsiveness
+                current_status = self.status_var.get()
+                if 'Volume:' in current_status:
+                    # Update the volume in the status text
+                    lines = current_status.split('\n')
+                    for i, line in enumerate(lines):
+                        if line.startswith('Volume:'):
+                            lines[i] = f"Volume: {volume_level}%"
+                            break
+                    self.status_var.set('\n'.join(lines))
+                
+                # Set the volume on the device
+                self.selected_client.SetVolumeLevel(volume_level)
+                
             except Exception as e:
                 self.log_error(f"Failed to set volume: {str(e)}", exc_info=True)
+            finally:
+                self._updating_volume = False
     
     def toggle_power(self):
         logger.debug(f"toggle_power called - has selected_client: {hasattr(self, 'selected_client')}, selected_client: {getattr(self, 'selected_client', None)}")
