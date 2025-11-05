@@ -6,6 +6,7 @@ import sys
 import traceback
 import logging
 from bosesoundtouchapi import *
+from bosesoundtouchapi.models import *
 
 # Configure logging
 logging.basicConfig(
@@ -26,10 +27,11 @@ class SoundTouchApp:
         self.root.title("Bose SoundTouch Controller")
         self.root.geometry("400x500")
         
-        # Initialize devices
+        # Initialize devices and client
         self.devices = {}
         self.saved_devices = {}
         self.selected_device = None
+        self.selected_client = None  # Initialize client
         
         # Create UI
         self.setup_ui()
@@ -99,6 +101,7 @@ class SoundTouchApp:
             
             self.devices = {}
             for device in devices:
+                device_key = None
                 try:
                     # Handle case where device might be a string (hostname:port) or object
                     if isinstance(device, str):
@@ -117,20 +120,30 @@ class SoundTouchApp:
                             'host': host,
                             'name': device_obj.DeviceName,
                             'port': port,  # Use the port we parsed earlier
-                            'mac': device_obj.DeviceID if hasattr(device_obj, 'DeviceID') else ''
+                            'mac': getattr(device_obj, 'DeviceID', '')
                         }
                     else:
-                        # Original object handling
-                        device_key = f"{device.DeviceName} ({device.Host})"
+                        # Original object handling with proper attribute access
+                        host = getattr(device, 'Host', 'unknown')
+                        name = getattr(device, 'DeviceName', 'Unknown Device')
+                        port = getattr(device, 'Port', 8090)  # Default port if not available
+                        device_id = getattr(device, 'DeviceID', '')
+                        
+                        device_key = f"{name} ({host})"
                         self.devices[device_key] = {
-                            'host': device.Host,
-                            'name': device.DeviceName,
-                            'port': device.DevicePort,
-                            'mac': device.DeviceID
+                            'host': host,
+                            'name': name,
+                            'port': port,
+                            'mac': device_id
                         }
-                    logger.info(f"Discovered device: {device_key}")
+                    
+                    if device_key:  # Only log if we successfully created a device key
+                        logger.info(f"Discovered device: {device_key}")
+                        
                 except Exception as e:
-                    self.log_error(f"Error processing device {device}: {str(e)}", exc_info=True)
+                    logger.error(f"Error processing device {device}: {str(e)}", exc_info=True)
+                    if device_key:  # Log the device key if we have it
+                        logger.error(f"Error with device: {device_key}")
             
             self.update_device_dropdown()
             if self.devices:
@@ -221,38 +234,106 @@ class SoundTouchApp:
             device_info = self.devices[selection]
             try:
                 logger.info(f"Connecting to device: {selection}")
-                self.selected_device = SoundTouchDevice(device_info['host'])
-                self.update_device_status()
                 
-                # Add to saved devices if not already there
-                if selection not in self.saved_devices:
-                    logger.info(f"Adding new device to saved devices: {selection}")
-                    self.saved_devices[selection] = device_info
-                    self.save_devices()
+                # Clean up any previous instances
+                if hasattr(self, 'selected_client'):
+                    del self.selected_client
+                if hasattr(self, 'selected_device'):
+                    del self.selected_device
+                
+                # Create new device instance
+                host = device_info['host']
+                port = device_info.get('port', 8090)  # Default port if not specified
+                logger.debug(f"Creating device with host: {host}, port: {port}")
+                
+                try:
+                    # Initialize the device and client
+                    self.selected_device = SoundTouchDevice(host, port=port)
+                    logger.debug("Creating SoundTouchClient")
+                    self.selected_client = SoundTouchClient(self.selected_device)
+                    
+                    # Test the connection
+                    logger.debug("Testing connection...")
+                    now_playing = self.selected_client.GetNowPlayingStatus(True)
+                    logger.info(f"Successfully connected to {host}. Now playing: {getattr(now_playing, 'ContentItem', 'N/A')}")
+                    
+                    # Add to saved devices if not already there
+                    if selection not in self.saved_devices:
+                        logger.info(f"Adding new device to saved devices: {selection}")
+                        self.saved_devices[selection] = device_info
+                        self.save_devices()
+                    
+                    # Update UI with device status
+                    self.update_device_status()
+                    
+                except Exception as e:
+                    logger.error(f"Failed to connect to device {host}: {str(e)}", exc_info=True)
+                    self.status_var.set(f"Failed to connect: {str(e)}")
+                    # Clean up on failure
+                    if hasattr(self, 'selected_client'):
+                        del self.selected_client
+                        self.selected_client = None
+                    if hasattr(self, 'selected_device'):
+                        del self.selected_device
+                        self.selected_device = None
+                    
             except Exception as e:
-                self.log_error(f"Failed to connect to device: {str(e)}", exc_info=True)
+                self.log_error(f"Error in device selection: {str(e)}", exc_info=True)
+                self.status_var.set(f"Error: {str(e)}")
     
     def update_device_status(self):
-        if not self.selected_device:
+        """Update the device status display with current information."""
+        logger.debug(f"update_device_status - selected_device: {getattr(self, 'selected_device', None)}")
+        
+        if not hasattr(self, 'selected_device') or not self.selected_device:
+            logger.warning("No device selected in update_device_status")
+            self.status_var.set("No device selected")
             return
             
         try:
-            # Refresh device status - use lowercase 'refresh' method
-            if hasattr(self.selected_device, 'refresh'):
-                self.selected_device.refresh()
-            
-            # Update volume slider if available
-            if hasattr(self.selected_device, 'Volume') and hasattr(self.selected_device.Volume, 'Level'):
-                self.volume_slider.set(self.selected_device.Volume.Level)
-            
-            # Build status string
             status_parts = []
             
+            # Get basic device info
             if hasattr(self.selected_device, 'DeviceName'):
                 status_parts.append(self.selected_device.DeviceName)
             
-            if hasattr(self.selected_device, 'PowerOn'):
-                status_parts.append(f"Power: {'On' if self.selected_device.PowerOn else 'Off'}")
+            # Get fresh status from the client if available
+            if hasattr(self, 'selected_client') and self.selected_client:
+                try:
+                    now_playing = self.selected_client.GetNowPlayingStatus(True)
+                    if now_playing:
+                        # Update power state
+                        if hasattr(now_playing, 'PowerState'):
+                            status_parts.append(f"Power: {now_playing.PowerState}")
+                        
+                        # Update volume if available
+                        if hasattr(now_playing, 'Volume') and hasattr(now_playing.Volume, 'Level'):
+                            self.volume_slider.set(now_playing.Volume.Level)
+                            status_parts.append(f"Volume: {now_playing.Volume.Level}%")
+                        
+                        # Update content info if available
+                        if hasattr(now_playing, 'ContentItem'):
+                            content = now_playing.ContentItem
+                            if hasattr(content, 'ItemName') and content.ItemName:
+                                status_parts.append(f"Playing: {content.ItemName}")
+                            if hasattr(content, 'Source') and content.Source:
+                                status_parts.append(f"Source: {content.Source}")
+                                
+                except Exception as e:
+                    self.log_error(f"Error getting device status: {str(e)}")
+                    status_parts.append("Status: Error")
+            else:
+                status_parts.append("Status: Not connected")
+            
+            # Update the status display
+            if status_parts:
+                self.status_var.set("\n".join(status_parts))
+            else:
+                self.status_var.set("No status available")
+                
+        except Exception as e:
+            self.log_error(f"Error in update_device_status: {str(e)}")
+            self.status_var.set(f"Error: {str(e)}")
             
             if hasattr(self.selected_device, 'ContentItem'):
                 if hasattr(self.selected_device.ContentItem, 'Source'):
@@ -277,15 +358,37 @@ class SoundTouchApp:
                 self.log_error(f"Failed to set volume: {str(e)}", exc_info=True)
     
     def toggle_power(self):
-        if self.selected_device:
-            try:
-                if self.selected_device.PowerOn:
-                    self.selected_device.PowerOff()
+        logger.debug(f"toggle_power called - has selected_client: {hasattr(self, 'selected_client')}, selected_client: {getattr(self, 'selected_client', None)}")
+        logger.debug(f"selected_device: {getattr(self, 'selected_device', None)}")
+        
+        if not hasattr(self, 'selected_client') or not self.selected_client:
+            error_msg = "No device client available. "
+            if hasattr(self, 'selected_device'):
+                error_msg += f"Device: {self.selected_device}"
+            self.status_var.set(error_msg)
+            logger.error(error_msg)
+            return
+            
+        try:
+            # Get current power state first
+            now_playing = self.selected_client.GetNowPlayingStatus(True)
+            if now_playing and hasattr(now_playing, 'PowerState'):
+                # Toggle power based on current state
+                if now_playing.PowerState == 'ON':
+                    self.selected_client.PowerOff()
                 else:
-                    self.selected_device.PowerOn()
-                self.update_device_status()
-            except Exception as e:
-                self.status_var.set(f"Error toggling power: {str(e)}")
+                    self.selected_client.PowerOn()
+                
+                # Update UI after a short delay to allow the device to process the command
+                self.root.after(1000, self.update_device_status)
+            else:
+                # Fallback to toggle if we can't determine current state
+                self.selected_client.Power()
+                self.root.after(1000, self.update_device_status)
+                
+        except Exception as e:
+            self.log_error(f"Error toggling power: {str(e)}", exc_info=True)
+            self.status_var.set(f"Error toggling power: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
