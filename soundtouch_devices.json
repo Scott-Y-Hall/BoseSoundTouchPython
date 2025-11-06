@@ -1,32 +1,32 @@
 {
-  "Garage ST10 (192.168.86.37:8090)": {
-    "host": "192.168.86.37",
-    "name": "Garage ST10",
-    "port": 8090,
-    "mac": ""
-  },
-  "Master BR ST10 (192.168.86.33:8090)": {
-    "host": "192.168.86.33",
-    "name": "Master BR ST10",
-    "port": 8090,
-    "mac": ""
-  },
   "Kitchen ST10 (192.168.86.250:8090)": {
     "host": "192.168.86.250",
     "name": "Kitchen ST10",
     "port": 8090,
-    "mac": ""
+    "mac": "8030DCB0DD18"
   },
-  "Living Room ST20 EFE (192.168.86.249:8090)": {
-    "host": "192.168.86.249",
-    "name": "Living Room ST20 EFE",
+  "Garage ST10 (192.168.86.37:8090)": {
+    "host": "192.168.86.37",
+    "name": "Garage ST10",
     "port": 8090,
-    "mac": ""
+    "mac": "985DAD2ED414"
   },
   "Trampoline Tunes SA5 (192.168.86.27:8090)": {
     "host": "192.168.86.27",
     "name": "Trampoline Tunes SA5",
     "port": 8090,
-    "mac": ""
+    "mac": "04A316BF0BD5"
+  },
+  "Master BR ST10 (192.168.86.33:8090)": {
+    "host": "192.168.86.33",
+    "name": "Master BR ST10",
+    "port": 8090,
+    "mac": "A81B6A006C68"
+  },
+  "Living Room ST20 EFE (192.168.86.249:8090)": {
+    "host": "192.168.86.249",
+    "name": "Living Room ST20 EFE",
+    "port": 8090,
+    "mac": "D05FB8AB6F33"
   }
 }

@@ -133,14 +133,14 @@ class SoundTouchApp:
                             'host': host,
                             'name': device_obj.DeviceName,
                             'port': port,  # Use the port we parsed earlier
-                            'mac': getattr(device_obj, 'DeviceID', '')
+                            'mac': getattr(device_obj, 'DeviceId', '')
                         }
                     else:
                         # Original object handling with proper attribute access
                         host = getattr(device, 'Host', 'unknown')
                         name = getattr(device, 'DeviceName', 'Unknown Device')
                         port = getattr(device, 'Port', 8090)  # Default port if not available
-                        device_id = getattr(device, 'DeviceID', '')
+                        device_id = getattr(device, 'DeviceId', '')
                         
                         device_key = f"{name} ({host})"
                         self.devices[device_key] = {
