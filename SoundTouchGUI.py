@@ -251,6 +251,26 @@ class SoundTouchApp:
             self.save_devices()
             self.status_var.set(f"Removed device: {device_name}")
     
+    def start_status_updates(self):
+        """Start the periodic status update loop."""
+        if hasattr(self, '_status_update_job'):
+            # Cancel any existing update job
+            self.root.after_cancel(self._status_update_job)
+        
+        # Schedule the next update
+        self._status_update_job = self.root.after(3000, self._update_status_loop)
+    
+    def _update_status_loop(self):
+        """Internal method to handle the status update loop."""
+        if hasattr(self, 'selected_client') and self.selected_client:
+            try:
+                self.update_device_status()
+            except Exception as e:
+                logger.error(f"Error in status update loop: {str(e)}", exc_info=True)
+        
+        # Schedule the next update
+        self.start_status_updates()
+
     def on_device_select(self, event=None):
         selection = self.device_var.get()
         if selection in self.devices:
@@ -260,6 +280,8 @@ class SoundTouchApp:
                 
                 # Clean up any previous instances
                 if hasattr(self, 'selected_client'):
+                    if hasattr(self, '_status_update_job'):
+                        self.root.after_cancel(self._status_update_job)
                     del self.selected_client
                 if hasattr(self, 'selected_device'):
                     del self.selected_device
@@ -286,14 +308,17 @@ class SoundTouchApp:
                         self.saved_devices[selection] = device_info
                         self.save_devices()
                     
-                    # Update UI with device status
+                    # Update UI with device status and start periodic updates
                     self.update_device_status()
+                    self.start_status_updates()
                     
                 except Exception as e:
                     logger.error(f"Failed to connect to device {host}: {str(e)}", exc_info=True)
                     self.status_var.set(f"Failed to connect: {str(e)}")
                     # Clean up on failure
                     if hasattr(self, 'selected_client'):
+                        if hasattr(self, '_status_update_job'):
+                            self.root.after_cancel(self._status_update_job)
                         del self.selected_client
                         self.selected_client = None
                     if hasattr(self, 'selected_device'):
@@ -338,11 +363,20 @@ class SoundTouchApp:
                         # Update content info if available
                         if hasattr(now_playing, 'ContentItem'):
                             content = now_playing.ContentItem
-                            if hasattr(content, 'ItemName') and content.ItemName:
-                                status_parts.append(f"Playing: {content.ItemName}")
+                            if hasattr(content, 'Name') and content.Name:
+                                status_parts.append(f"Playing: {content.Name}")
                             if hasattr(content, 'Source') and content.Source:
                                 status_parts.append(f"Source: {content.Source}")
-                                
+                            if hasattr(now_playing, 'Artist') and now_playing.Artist:
+                                status_parts.append(f"Artist: {now_playing.Artist}")
+                            if hasattr(now_playing, 'Album') and now_playing.Album:
+                                status_parts.append(f"Album: {now_playing.Album}")
+                            if hasattr(now_playing, 'Track') and now_playing.Track:
+                                status_parts.append(f"Track: {now_playing.Track}")
+                            if hasattr(now_playing, 'Duration') and now_playing.Duration:
+                                status_parts.append(f"Position: {now_playing.Position} of {now_playing.Duration}")
+                            if hasattr(now_playing, 'Art_URL') and now_playing.ArtUrl:
+                                status_parts.append(f"Artwork: {now_playing.ArtUrl}")
                 except Exception as e:
                     self.log_error(f"Error getting device status: {str(e)}")
                     status_parts.append("Status: Error")
@@ -362,8 +396,8 @@ class SoundTouchApp:
             if hasattr(self.selected_device, 'ContentItem'):
                 if hasattr(self.selected_device.ContentItem, 'Source'):
                     status_parts.append(f"Source: {self.selected_device.ContentItem.Source}")
-                if hasattr(self.selected_device.ContentItem, 'ItemName') and self.selected_device.ContentItem.ItemName:
-                    status_parts.append(f"Now Playing: {self.selected_device.ContentItem.ItemName}")
+                if hasattr(self.selected_device.ContentItem, 'Name') and self.selected_device.ContentItem.Name:
+                    status_parts.append(f"Now Playing: {self.selected_device.ContentItem.Name}")
             
             status = '\n'.join(status_parts)
             self.status_var.set(status)
@@ -413,6 +447,7 @@ class SoundTouchApp:
         try:
             # Get current power state first
             now_playing = self.selected_client.GetNowPlayingStatus(True)
+            print("\nCurrent Now Playing Status:\n%s" % now_playing.ToString())
             if now_playing and hasattr(now_playing, 'PowerState'):
                 # Toggle power based on current state
                 if now_playing.PowerState == 'ON':
