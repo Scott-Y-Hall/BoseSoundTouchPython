@@ -5,6 +5,9 @@ import os
 import sys
 import traceback
 import logging
+import io
+import urllib.request
+from PIL import Image, ImageTk
 from bosesoundtouchapi import *
 from bosesoundtouchapi.models import *
 
@@ -25,7 +28,7 @@ class SoundTouchApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Bose SoundTouch Controller")
-        self.root.geometry("400x500")
+        self.root.geometry("600x700")  # Increased size to accommodate artwork
         
         # Initialize devices and client
         self.devices = {}
@@ -33,6 +36,9 @@ class SoundTouchApp:
         self.selected_device = None
         self.selected_client = None  # Initialize client
         self._updating_volume = False  # Flag to prevent update loops
+        self.current_artwork_url = None
+        self.artwork_label = None
+        self.photo = None  # Keep a reference to prevent garbage collection
         
         # Create UI
         self.setup_ui()
@@ -60,10 +66,16 @@ class SoundTouchApp:
         self.power_btn = ttk.Button(self.root, text="Power On/Off", command=self.toggle_power)
         self.power_btn.pack(pady=10)
         
+        # Artwork display
+        self.artwork_frame = ttk.Frame(self.root)
+        self.artwork_frame.pack(pady=10)
+        self.artwork_label = ttk.Label(self.artwork_frame)
+        self.artwork_label.pack()
+        
         # Status display
         self.status_var = tk.StringVar()
         self.status_var.set("Select a device to begin")
-        ttk.Label(self.root, textvariable=self.status_var, wraplength=350).pack(pady=10)
+        ttk.Label(self.root, textvariable=self.status_var, wraplength=550).pack(pady=10)
         
         # Button frame
         btn_frame = ttk.Frame(self.root)
@@ -329,6 +341,33 @@ class SoundTouchApp:
                 self.log_error(f"Error in device selection: {str(e)}", exc_info=True)
                 self.status_var.set(f"Error: {str(e)}")
     
+    def update_artwork(self, image_url):
+        """Update the artwork display with the image from the given URL."""
+        def load_image():
+            try:
+                with urllib.request.urlopen(image_url) as url:
+                    image_data = url.read()
+                    image = Image.open(io.BytesIO(image_data))
+                    
+                    # Resize image to fit in the UI (max 400x400)
+                    max_size = (400, 400)
+                    image.thumbnail(max_size, Image.Resampling.LANCZOS)
+                    
+                    # Convert to PhotoImage
+                    self.photo = ImageTk.PhotoImage(image)
+                    
+                    # Update the label in the main thread
+                    self.root.after(0, lambda: self.artwork_label.configure(image=self.photo))
+                    
+            except Exception as e:
+                logger.error(f"Error loading artwork from {image_url}: {str(e)}")
+                # Clear the artwork if there was an error
+                self.root.after(0, lambda: self.artwork_label.configure(image=''))
+        
+        # Run the image loading in a separate thread to avoid freezing the UI
+        import threading
+        threading.Thread(target=load_image, daemon=True).start()
+    
     def update_device_status(self):
         """Update the device status display with current information."""
         logger.debug(f"update_device_status - selected_device: {getattr(self, 'selected_device', None)}")
@@ -367,16 +406,18 @@ class SoundTouchApp:
                                 status_parts.append(f"Playing: {content.Name}")
                             if hasattr(content, 'Source') and content.Source:
                                 status_parts.append(f"Source: {content.Source}")
-                            if hasattr(now_playing, 'Artist') and now_playing.Artist:
-                                status_parts.append(f"Artist: {now_playing.Artist}")
-                            if hasattr(now_playing, 'Album') and now_playing.Album:
-                                status_parts.append(f"Album: {now_playing.Album}")
-                            if hasattr(now_playing, 'Track') and now_playing.Track:
-                                status_parts.append(f"Track: {now_playing.Track}")
-                            if hasattr(now_playing, 'Duration') and now_playing.Duration:
-                                status_parts.append(f"Position: {now_playing.Position} of {now_playing.Duration}")
-                            if hasattr(now_playing, 'Art_URL') and now_playing.ArtUrl:
-                                status_parts.append(f"Artwork: {now_playing.ArtUrl}")
+                        if hasattr(now_playing, 'Artist') and now_playing.Artist:
+                            status_parts.append(f"Artist: {now_playing.Artist}")
+                        if hasattr(now_playing, 'Album') and now_playing.Album:
+                            status_parts.append(f"Album: {now_playing.Album}")
+                        if hasattr(now_playing, 'Track') and now_playing.Track:
+                            status_parts.append(f"Track: {now_playing.Track}")
+                        if hasattr(now_playing, 'Duration') and now_playing.Duration:
+                            status_parts.append(f"Position: {now_playing.Position} of {now_playing.Duration}")
+                        if hasattr(now_playing, 'ArtUrl') and now_playing.ArtUrl:
+                            if now_playing.ArtUrl != self.current_artwork_url:
+                                self.current_artwork_url = now_playing.ArtUrl
+                                self.update_artwork(now_playing.ArtUrl)
                 except Exception as e:
                     self.log_error(f"Error getting device status: {str(e)}")
                     status_parts.append("Status: Error")
